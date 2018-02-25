@@ -41,12 +41,17 @@ private:
 	std::vector<ClangTreeWidgetItem*> treeItems;
 	std::vector<ClangTreeWidgetItem*> lastColoredItems;
 	QColor treeItemDefaultBg;
+	bool disposingTreeItems = false;
 	void disposeTreeItems() {
+		disposingTreeItems = true;
+
 		if(!treeItems.empty())
 			delete treeItems[0];
 		//delete top level item and its children will be deleted automatically
 		treeItems.clear();
 		lastColoredItems.clear();
+
+		disposingTreeItems = false;
 	}
 
 	QString currentFilePath;

@@ -105,11 +105,15 @@ vector<string> MyClangParser::getDiagnosis() {
 		unsigned line, column, offset;
 		clang_getSpellingLocation(clang_getDiagnosticLocation(diag),
 			&file, &line, &column, &offset);
-		CXString filePath = clang_getFileName(file);
-		string fileName = getFileName(clang_getCString(filePath));
-		clang_disposeString(filePath);
 
-		sstream << fileName << ":" << line << ":" << column << " ";
+		CXString filePath = clang_getFileName(file);
+		// if this diagnosis is related to a file
+		if(clang_getCString(filePath) != nullptr) {
+			string fileName = getFileName(clang_getCString(filePath));
+			clang_disposeString(filePath);
+
+			sstream << fileName << ":" << line << ":" << column << " ";
+		}
 
 		unsigned formatOption = CXDiagnostic_DisplaySourceRanges |
 							  CXDiagnostic_DisplayOption |

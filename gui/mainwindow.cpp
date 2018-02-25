@@ -88,6 +88,11 @@ std::stack<int> MainWindow::getTreeCurrentPath() {
 }
 
 void MainWindow::onTreeWidgetSelectionChanged() {
+	// because this event will be emitted when disposing tree items
+	// for example: you select a tree item in file A, then you open file B
+	if(disposingTreeItems)
+		return;
+
 	// remove last colored item
 	for(ClangTreeWidgetItem* item: lastColoredItems)
 		item->setBackgroundColor(this->treeItemDefaultBg);

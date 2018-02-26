@@ -12,6 +12,7 @@ TARGET = libclang-gui
 TEMPLATE = app
 
 CONFIG += debug c++11
+QMAKE_CXXFLAGS += -Wno-switch
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which as been marked as deprecated (the exact warnings

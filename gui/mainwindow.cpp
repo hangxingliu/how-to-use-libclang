@@ -1,6 +1,7 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDebug>
+#include <QScrollBar>
 
 #include <stack>
 
@@ -19,7 +20,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
 	ui->setupUi(this);
 	this->setupStatusBar();
-	this->setupTreeWidget();
+	this->setupTreeAndList();
 
 	this->highlighter = new Highlighter(ui->textSources->document());
 }
@@ -36,22 +37,27 @@ void MainWindow::setupStatusBar() {
 	ui->actionOpen->setStatusTip(ui->actionOpen->toolTip());
 }
 
-void MainWindow::setupTreeWidget() {
-	ui->treeWidget->setColumnCount(2);
-	ui->treeWidget->setHeaderLabels(QStringList() << "Type" << "Name");
-	ui->treeWidget->setColumnWidth(0, 200); // initialized width
-	ui->treeWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-	ui->treeWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
+void MainWindow::setupTreeAndList() {
+	ui->treeAST->setColumnCount(2);
+	ui->treeAST->setHeaderLabels(QStringList() << "Type" << "Name");
+	ui->treeAST->setColumnWidth(0, 200); // initialized width
+	ui->treeAST->setSelectionMode(QAbstractItemView::SingleSelection);
+	ui->treeAST->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+	ui->listToken->setSelectionMode(QAbstractItemView::SingleSelection);
+	ui->listToken->setSelectionBehavior(QAbstractItemView::SelectRows);
 
 	// cancel default highligh color schema
 	QPalette palette;
 	palette.setColor(QPalette::Highlight, ColorScheme::getPrimary());
-	palette.setColor(QPalette::HighlightedText, ui->treeWidget->palette().color(QPalette::Text));
-	treeItemDefaultBg = ui->treeWidget->palette().color(QPalette::Base);
-	ui->treeWidget->setPalette(palette);
+	palette.setColor(QPalette::HighlightedText, ui->treeAST->palette().color(QPalette::Text));
+	treeItemDefaultBg = ui->treeAST->palette().color(QPalette::Base);
+	ui->treeAST->setPalette(palette);
 
-	connect(ui->treeWidget, SIGNAL(itemSelectionChanged()),
-		this, SLOT(onTreeWidgetSelectionChanged()));
+	connect(ui->treeAST, SIGNAL(itemSelectionChanged()),
+		this, SLOT(onTreeASTSelectionChanged()));
+	connect(ui->listToken, SIGNAL(itemSelectionChanged()),
+		this, SLOT(onListTokenSelectionChanged()));
 }
 
 void MainWindow::displaySources(QString sources) {
@@ -72,11 +78,11 @@ void MainWindow::displaySources(QString sources) {
 	ui->textSources->setHtml(htmlTemplate.arg(htmlLines.join("\n")));
 
 	// reset highlighter
-	this->highlighter->clearHighlighRules();
+	this->highlighter->clearBgRules();
 }
 
 std::stack<int> MainWindow::getTreeCurrentPath() {
-	auto index = ui->treeWidget->currentIndex();
+	auto index = ui->treeAST->currentIndex();
 	std::stack<int> s;
 	int row = -1;
 	while((row = index.row()) >= 0) {
@@ -87,7 +93,47 @@ std::stack<int> MainWindow::getTreeCurrentPath() {
 	return s;
 }
 
-void MainWindow::onTreeWidgetSelectionChanged() {
+void MainWindow::scrollSourcesTo(int offset) {
+	QTextCursor cursor = ui->textSources->textCursor();
+	cursor.setPosition(offset);
+	ui->textSources->setTextCursor(cursor);
+
+	// make selected line to centre
+	int currentScollY = ui->textSources->cursorRect().top();
+	QScrollBar* barY = ui->textSources->verticalScrollBar();
+	barY->setValue(barY->value() + currentScollY - (ui->textSources->height() >> 1) );
+}
+
+void MainWindow::onListTokenSelectionChanged() {
+	int row = ui->listToken->currentRow();
+	if(row < 0) return;
+
+	auto nodes = parser->getTokenNodes();
+	if((unsigned)row >= nodes.size()) return;
+
+	const MyTokenizeNode& token = nodes[row];
+
+	QTextCharFormat format;
+	char lastTokenIsMacroChar = 0, placeholder = 0;
+	if(row >= 1)
+		Highlighter::getFgColorFromToken(nodes[row-1], 0, &lastTokenIsMacroChar);
+
+	const QColor& color = Highlighter::getFgColorFromToken(
+		token, lastTokenIsMacroChar, &placeholder);
+
+	format.setForeground(color);
+	format.setFontWeight(QFont::Bold);
+	format.setFontUnderline(true);
+	format.setUnderlineColor(color);
+
+	highlighter->clearStyleRules();
+	highlighter->addStyleRule(HighlighRule(token.begin, token.end, format));
+	highlighter->rehighlight();
+
+	scrollSourcesTo(token.begin);
+}
+
+void MainWindow::onTreeASTSelectionChanged() {
 	// because this event will be emitted when disposing tree items
 	// for example: you select a tree item in file A, then you open file B
 	if(disposingTreeItems)
@@ -98,7 +144,7 @@ void MainWindow::onTreeWidgetSelectionChanged() {
 		item->setBackgroundColor(this->treeItemDefaultBg);
 	lastColoredItems.clear();
 
-	auto currentItem = (ClangTreeWidgetItem*) ui->treeWidget->currentItem();
+	auto currentItem = (ClangTreeWidgetItem*) ui->treeAST->currentItem();
 	if(currentItem == nullptr)
 		return;
 
@@ -114,14 +160,20 @@ void MainWindow::onTreeWidgetSelectionChanged() {
 	scheme.last();
 
 
-	highlighter->clearHighlighRules();
+	highlighter->clearBgRules();
 	auto astVisitor = this->astRootNode;
+	bool scrolled = false;
 	while(!path.empty()) {
 		astVisitor = astVisitor->children[path.top()];
 		HighlighRule rule(astVisitor->begin, astVisitor->end,
 			ColorScheme::asBackgroundFormat(scheme.last()));
-		highlighter->addHighlighRule(std::move(rule));
+		highlighter->addBgRule(std::move(rule));
+		if(!scrolled) {
+			scrollSourcesTo(astVisitor->begin);
+			scrolled = true;
+		}
 		path.pop();
+
 	}
 	highlighter->rehighlight();
 }
@@ -185,7 +237,7 @@ void MainWindow::on_actionOpen_triggered() {
 	for(MyASTNode* node: nodes) {
 		ClangTreeWidgetItem* item = nullptr;
 		if(node->depth == 0) {
-			item = new ClangTreeWidgetItem(ui->treeWidget, node);
+			item = new ClangTreeWidgetItem(ui->treeAST, node);
 			item->setText("Root(File)", this->currentFileName);
 		} else {
 			item = new ClangTreeWidgetItem(node);
@@ -200,8 +252,43 @@ void MainWindow::on_actionOpen_triggered() {
 			parentItem->addChild(this->treeItems[child->id]);
 	}
 	//expand first level
-	ui->treeWidget->expandItem(ui->treeWidget->topLevelItem(0));
+	ui->treeAST->expandItem(ui->treeAST->topLevelItem(0));
 
+
+	// ================
+	// for treeToken
+	// >>>>>>>>>>>>>>>>
+	ui->listToken->clear();
+
+	const size_t EXPECTED_LEN = 12;
+	auto _pad = [](std::string str) {
+		str.insert(str.end(), EXPECTED_LEN - str.length(), ' '); return str; };
+
+	auto tokens = parser->getTokenNodes();
+	char lastIsMacroChar = 0, thisIsMacroChar = 0;
+	for(const MyTokenizeNode& token: tokens) {
+		auto item = new QListWidgetItem(ui->listToken);
+		QString text;
+		if(token.name.length() > (EXPECTED_LEN - 3))
+			text = QString::fromStdString(token.name.substr(0, EXPECTED_LEN - 3) + "...");
+		else
+			text = QString::fromStdString(_pad(token.name));
+		text = text.replace('\n', ' ')
+			.replace('\t', ' ')
+			.append("  (").append(token.typeName).append(")");
+		item->setText(text);
+		item->setForeground(Highlighter::getFgColorFromToken(
+			token, lastIsMacroChar, &thisIsMacroChar));
+
+		lastIsMacroChar = thisIsMacroChar;
+	}
+
+	// ======================
+	//  for highlight code
+	// >>>>>>>>>>>>>>>>>>>>>>
+	this->highlighter->clearFgRules();
+	this->highlighter->addFgRulesFromTokens(tokens);
+	this->highlighter->rehighlight();
 }
 
 

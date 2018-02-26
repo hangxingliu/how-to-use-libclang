@@ -29,12 +29,27 @@ public:
 	void addChild(MyASTNode* child) { children.push_back(child); }
 };
 
+class MyTokenizeNode {
+public:
+	unsigned begin = 0;
+	unsigned end = 0;
+	unsigned line0, line1, col0, col1;
+
+	const char* typeName;
+	CXTokenKind type;
+	std::string name;
+
+	MyTokenizeNode(const CXTranslationUnit &tu, const CXToken & token);
+};
+
 class MyClangParser {
 	CXTranslationUnit tu = nullptr;
 	CXIndex index = nullptr;
 
 	MyASTNode* rootNode = nullptr;
 	std::vector<MyASTNode*> nodesPool;
+
+	std::vector<MyTokenizeNode> nodesToken;
 
 	std::string filePath;
 	std::string fileName;
@@ -72,6 +87,7 @@ public:
 	std::vector<std::string> getDiagnosis();
 
 	bool isSuccess() const { return rootNode != nullptr; }
+
 	MyASTNode* getASTRootNode() const {
 		return rootNode; }
 	const std::vector<MyASTNode*>& getNodesVector() const {
@@ -89,6 +105,9 @@ public:
 		nodesPool.push_back(nodePtr);
 		return nodePtr;
 	}
+
+	const std::vector<MyTokenizeNode>& getTokenNodes() const {
+		return nodesToken; }
 };
 
 

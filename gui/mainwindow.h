@@ -25,7 +25,8 @@ public:
 private slots:
 	void on_actionOpen_triggered();
 
-	void onTreeWidgetSelectionChanged();
+	void onTreeASTSelectionChanged();
+	void onListTokenSelectionChanged();
 
 private:
 	Ui::MainWindow *ui;
@@ -60,10 +61,12 @@ private:
 	Highlighter* highlighter = nullptr;
 
 	void setupStatusBar();
-	void setupTreeWidget();
+	void setupTreeAndList();
 	void displaySources(QString sources);
 
 	std::stack<int> getTreeCurrentPath();
+
+	void scrollSourcesTo(int offset);
 };
 
 #endif // MAINWINDOW_H

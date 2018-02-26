@@ -19,6 +19,12 @@ vector<QColor> ColorScheme::COLOR_VECTOR = {
 	QColor("#FFF8D1")
 };
 
+QColor ColorScheme::COLOR_NORMAL = QColor("#000000");
+QColor ColorScheme::COLOR_KEYWORD = QColor("#0000ff");
+QColor ColorScheme::COLOR_COMMENT = QColor("#008000");
+QColor ColorScheme::COLOR_LITERAL_STR = QColor("#a31515");
+QColor ColorScheme::COLOR_LITERAL_NUM = QColor("#09885a");
+
 ColorScheme::ColorScheme():
 	index(0), border((unsigned) COLOR_VECTOR.size()) {}
 

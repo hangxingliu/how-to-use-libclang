@@ -9,6 +9,50 @@
 
 using namespace std;
 
+/// from clang string to c++ std::string and dispose clang string;
+string convertStr(CXString&& clangStr) {
+	string result(clang_getCString(clangStr));
+	clang_disposeString(clangStr);
+	return result;
+}
+
+// ========================================
+//
+//   MyTokenizeNode:
+//
+// >>>>>>>>>>>>>>>>>>>
+
+MyTokenizeNode::MyTokenizeNode(const CXTranslationUnit &tu, const CXToken &token) {
+	CXTokenKind kind = clang_getTokenKind(token);
+	CXSourceRange range = clang_getTokenExtent(tu, token);
+
+	CXSourceLocation beginLoc = clang_getRangeStart(range);
+	CXSourceLocation endLoc = clang_getRangeEnd(range);
+
+	CXFile file;
+	clang_getExpansionLocation(beginLoc, &file, &line0, &col0, &begin);
+	clang_getExpansionLocation(endLoc, &file, &line1, &col1, &end);
+
+	this->name = convertStr(clang_getTokenSpelling(tu, token));
+	this->type = kind;
+	switch (kind) {
+		case CXToken_Punctuation: this->typeName = "Punctuation"; break;
+		case CXToken_Keyword:     this->typeName = "Keyword"; break;
+		case CXToken_Identifier:  this->typeName = "Identifier"; break;
+		case CXToken_Literal:     this->typeName = "Literal"; break;
+		case CXToken_Comment:     this->typeName = "Comment"; break;
+		default:                  this->typeName = "Unknown"; break;
+	}
+}
+
+
+
+// ========================================
+//
+//   MyClangParser:
+//
+// >>>>>>>>>>>>>>>>>>>
+
 class VisitorPackage {
 public:
 	int depth = 1;
@@ -22,13 +66,6 @@ public:
 	VisitorPackage goDeeper(MyASTNode* newParent) const {
 		return VisitorPackage(depth + 1, context, newParent); }
 };
-
-/// from clang string to c++ std::string and dispose clang string;
-string convertStr(CXString&& clangStr) {
-	string result(clang_getCString(clangStr));
-	clang_disposeString(clangStr);
-	return result;
-}
 
 CXChildVisitResult visitor(CXCursor cursor, CXCursor, CXClientData _package) {
 	auto pkg = (VisitorPackage*) _package;
@@ -61,6 +98,13 @@ CXChildVisitResult visitor(CXCursor cursor, CXCursor, CXClientData _package) {
 	return CXChildVisit_Continue;
 }
 
+unsigned getFileSize(const char *filePath) {
+	FILE *fp = fopen(filePath, "r");
+	fseek(fp, 0, SEEK_END);
+	unsigned size = ftell(fp);
+	fclose(fp);
+	return size;
+}
 
 void MyClangParser::parse() {
 	const int clangArgc = 1;
@@ -83,6 +127,27 @@ void MyClangParser::parse() {
 
 	auto cursor = clang_getTranslationUnitCursor(this->tu);
 	clang_visitChildren(cursor, visitor, &package);
+
+	// generate nodes
+	CXFile file = clang_getFile(tu, filePath.c_str());
+	unsigned fileSize = getFileSize(filePath.c_str());
+	auto begin  = clang_getLocationForOffset(tu, file, 0);
+	auto end = clang_getLocationForOffset(tu, file, fileSize);
+	auto nil = clang_getNullLocation();
+	if(clang_equalLocations(begin, nil) || clang_equalLocations(end, nil))
+		return; /// @todo exception handler
+
+	auto range = clang_getRange(begin, end);
+	if(clang_Range_isNull(range))
+		return; /// @todo exception handler
+
+	CXToken* tokens;
+	unsigned tokenCount;
+	clang_tokenize(tu, range, &tokens, &tokenCount);
+	for(unsigned i = 0 ; i < tokenCount ; i ++ )
+		this->nodesToken.emplace_back(MyTokenizeNode(tu, tokens[i]));
+	clang_disposeTokens(tu, tokens, tokenCount);
+
 }
 
 
